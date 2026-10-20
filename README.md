@@ -56,6 +56,7 @@ entity: switch.washer
 | `entity` | `switch.washer` | The washer's power switch from SmartThings. The other entities are found from its name. |
 | `name` | friendly name | Title shown on the card. |
 | `color` | `white` | Body colour: `white`, `black`, `silver` or `beige`. |
+| `device` | `washer` | `washer` or `dryer`. Standalone dryers: use `type: custom:samsung-dryer-card` (or `device: dryer`) for a dryer model with Sensing / Dry / Cool steps, no water, and `sensor.<x>_dryer_job_state` / `select.<x>_dryer_mode` lookups. |
 | `dryer` | `true` | Show the **Dry** step (for washer-dryers). Set `false` for a washer only. |
 | `height` | `320` | Height of the 3D view in pixels, or any CSS length. |
 | `bloom` | `true` | Glow effect. Turn it off on low-end tablets. |

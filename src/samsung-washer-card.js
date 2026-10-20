@@ -54,6 +54,8 @@ const JOB_MAP = {
 };
 
 const STEP_ORDER = ['wash', 'rinse', 'spin', 'dry'];
+const DRYER_STEPS = ['sensing', 'dry', 'cool'];
+const DRYER_STEP_OF = { sensing: 'sensing', dry: 'dry', cool: 'cool', wrinkle: 'cool', finish: 'done' };
 const STEP_OF = { sensing: 'wash', prewash: 'wash', wash: 'wash', rinse: 'rinse', spin: 'spin', dry: 'dry', cool: 'dry', wrinkle: 'dry', finish: 'done' };
 
 /* ---------- text ---------- */
@@ -67,9 +69,9 @@ const STRINGS = {
       rinse: 'Rinsing', spin: 'Spinning', dry: 'Drying', cool: 'Cooling down', wrinkle: 'Wrinkle prevent', finish: 'Done',
       pause: 'Paused', unavailable: 'Unavailable',
     },
-    step: { wash: 'Wash', rinse: 'Rinse', spin: 'Spin', dry: 'Dry' },
+    step: { wash: 'Wash', rinse: 'Rinse', spin: 'Spin', dry: 'Dry', sensing: 'Sensing', cool: 'Cool down' },
     word: { finish: 'Laundry is ready', off: 'Off', idle: 'Ready', pause: 'Paused', delay: 'Starting later', unavailable: 'Unavailable' },
-    hours: 'h', minutes: 'min', ends: 'Ends', unload: 'Open the door<b>and unload</b>',
+    hours: 'h', minutes: 'min', ends: 'Ends', unload: 'Open the door<b>and unload</b>', dryerName: 'Dryer',
     doorOpen: 'Door open', door: 'Door', open: 'Open', closed: 'Closed',
     power: 'Power', energy: 'Energy', program: 'Program',
     turnOn: 'Turn on', turnOff: 'Turn off', locked: "Can't power off while a cycle is running",
@@ -79,6 +81,8 @@ const STRINGS = {
       delicates: 'Delicates', wool: 'Wool', bedding: 'Bedding', mixed_load: 'Mixed load', super_speed: 'Super speed',
       ai_wash: 'AI Wash', rinse_spin: 'Rinse + Spin', drum_clean: 'Drum clean', denim: 'Denim', towels: 'Towels',
       shirts: 'Shirts', wash_dry: 'Wash + Dry',
+      normal: 'Normal', heavy_duty: 'Heavy duty', air_dry: 'Air dry', air_refresh: 'Air refresh', sanitize: 'Sanitize', time_dry: 'Time dry',
+      speed_dry: 'Speed dry', low_heat: 'Low heat', auto_dry: 'Auto dry', sportswear: 'Sportswear', steam_refresh: 'Steam refresh',
     },
   },
   tr: {
@@ -87,9 +91,9 @@ const STRINGS = {
       rinse: 'Durulama', spin: 'Sıkma', dry: 'Kurutma', cool: 'Soğutma', wrinkle: 'Kırışık önleme', finish: 'Bitti',
       pause: 'Duraklatıldı', unavailable: 'Bağlantı yok',
     },
-    step: { wash: 'Yıkama', rinse: 'Durulama', spin: 'Sıkma', dry: 'Kurutma' },
+    step: { wash: 'Yıkama', rinse: 'Durulama', spin: 'Sıkma', dry: 'Kurutma', sensing: 'Algılama', cool: 'Soğutma' },
     word: { finish: 'Çamaşırlar hazır', off: 'Kapalı', idle: 'Hazır', pause: 'Duraklatıldı', delay: 'Başlayacak', unavailable: 'Bağlantı yok' },
-    hours: 'sa', minutes: 'dk', ends: 'Bitiş', unload: 'Kapağı açıp<b>boşaltın</b>',
+    hours: 'sa', minutes: 'dk', ends: 'Bitiş', unload: 'Kapağı açıp<b>boşaltın</b>', dryerName: 'Kurutma Makinesi',
     doorOpen: 'Kapak açık', door: 'Kapak', open: 'Açık', closed: 'Kapalı',
     power: 'Güç', energy: 'Enerji', program: 'Program',
     turnOn: 'Aç', turnOff: 'Kapat', locked: 'Program çalışırken kapatılamaz',
@@ -164,8 +168,9 @@ const DRUM_Z = D / 2 - 0.07 - DRUM_D / 2; // drum centre z
 const G = 4.2;             // visual gravity: real g reads too fast at this scale
 
 class WasherScene {
-  constructor(canvas, { color = 'white', bloom = true } = {}) {
+  constructor(canvas, { color = 'white', bloom = true, device = 'washer' } = {}) {
     this.canvas = canvas;
+    this.device = device;
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -306,12 +311,25 @@ class WasherScene {
     const front = D / 2 + 0.0105;
 
     // Detergent drawer outline + handle.
-    const drawer = new THREE.Mesh(new RoundedBoxGeometry(0.15, 0.072, 0.004, 2, 0.003), new THREE.MeshStandardMaterial({ color: '#1a1e26', roughness: 0.3, metalness: 0.4 }));
-    drawer.position.set(-0.19, H - 0.085, front);
-    this.machine.add(drawer);
-    const handle = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.008, 0.006, 2, 0.003), new THREE.MeshStandardMaterial({ color: '#8d939e', roughness: 0.25, metalness: 0.9 }));
-    handle.position.set(-0.19, H - 0.112, front + 0.003);
-    this.machine.add(handle);
+    if (this.device === 'dryer') {
+      // Dryers have no detergent drawer: a heat-vent grille takes its place.
+      const slotMat = new THREE.MeshStandardMaterial({ color: '#1a1e26', roughness: 0.3, metalness: 0.4 });
+      for (let i = 0; i < 5; i++) {
+        const slot = new THREE.Mesh(new RoundedBoxGeometry(0.11, 0.006, 0.004, 2, 0.002), slotMat);
+        slot.position.set(-0.19, H - 0.06 - i * 0.0135, front);
+        this.machine.add(slot);
+      }
+    }
+    const drawer = this.device === 'dryer' ? null : new THREE.Mesh(new RoundedBoxGeometry(0.15, 0.072, 0.004, 2, 0.003), new THREE.MeshStandardMaterial({ color: '#1a1e26', roughness: 0.3, metalness: 0.4 }));
+    if (drawer) {
+      drawer.position.set(-0.19, H - 0.085, front);
+      this.machine.add(drawer);
+    }
+    const handle = this.device === 'dryer' ? null : new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.008, 0.006, 2, 0.003), new THREE.MeshStandardMaterial({ color: '#8d939e', roughness: 0.25, metalness: 0.9 }));
+    if (handle) {
+      handle.position.set(-0.19, H - 0.112, front + 0.003);
+      this.machine.add(handle);
+    }
 
     // Display (canvas texture; redrawn only when its text changes).
     this.displayCanvas = document.createElement('canvas');
@@ -843,6 +861,7 @@ class WasherScene {
 
 /* ---------- Lovelace card ---------- */
 
+const ICON_DRYER = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2.5" width="16" height="19" rx="3"/><path d="M4 7h16"/><circle cx="12" cy="14" r="4.5"/><path d="M10 12.5c.8.8-.8 1.7 0 2.5M13 12.5c.8.8-.8 1.7 0 2.5"/><circle cx="7.5" cy="4.8" r=".6" fill="currentColor"/></svg>';
 const ICON_WASHER = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2.5" width="16" height="19" rx="3"/><path d="M4 7h16"/><circle cx="12" cy="14" r="4.5"/><path d="M9.5 14.5c1 .8 2 .8 3 0s2-.8 3 0"/><circle cx="7.5" cy="4.8" r=".6" fill="currentColor"/><circle cx="10" cy="4.8" r=".6" fill="currentColor"/></svg>';
 const ICON_POWER = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.4 6.6a8 8 0 1 0 11.2 0"/></svg>';
 const ICON_CHECK = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4.2L19 7"/></svg>';
@@ -927,6 +946,11 @@ class SamsungWasherCard extends HTMLElement {
     return { entity: sw || 'switch.washer' };
   }
 
+  static _dryerStub(hass) {
+    const sw = Object.keys(hass?.states || {}).find((id) => id.startsWith('switch.') && /dry|tumble|kurut/i.test(id + (hass.states[id].attributes.friendly_name || '')));
+    return { entity: sw || 'switch.dryer' };
+  }
+
   setConfig(config) {
     if (!config) throw new Error(STRINGS.en.invalid);
     this._config = { dryer: true, color: 'white', height: 320, ...config };
@@ -964,20 +988,25 @@ class SamsungWasherCard extends HTMLElement {
     if (this._ids) return this._ids;
     const c = this._config;
     const states = this._hass.states;
-    const base = c.entity_prefix || (c.entity ? c.entity.split('.')[1] : 'washer');
+    const dry = c.device === 'dryer';
+    const base = c.entity_prefix || (c.entity ? c.entity.split('.')[1] : (dry ? 'dryer' : 'washer'));
     const pick = (...ids) => ids.find((id) => id && states[id]);
     const e = c.entities || {};
     const ids = {
       power: e.power || pick(c.entity, `switch.${base}`),
-      machine: e.machine_state || pick(`sensor.${base}_machine_state`, `sensor.${base}_washer_machine_state`),
-      job: e.job_state || pick(`sensor.${base}_job_state`, `sensor.${base}_washer_job_state`),
-      dryerJob: e.dryer_job_state || pick(`sensor.${base}_dryer_job_state`),
+      machine: e.machine_state || pick(`sensor.${base}_machine_state`, `sensor.${base}_${dry ? 'dryer' : 'washer'}_machine_state`),
+      job: e.job_state || (dry
+        ? pick(`sensor.${base}_dryer_job_state`, `sensor.${base}_job_state`)
+        : pick(`sensor.${base}_job_state`, `sensor.${base}_washer_job_state`)),
+      dryerJob: dry ? undefined : (e.dryer_job_state || pick(`sensor.${base}_dryer_job_state`)),
       completion: e.completion_time || pick(`sensor.${base}_completion_time`, `sensor.${base}_washer_completion_time`, `sensor.${base}_dryer_completion_time`),
       progress: e.progress || pick(`sensor.${base}_progress`, `sensor.${base}_cycle_progress`),
       door: e.door || pick(`binary_sensor.${base}_door`, `binary_sensor.${base}_door_state`),
       energy: e.energy || pick(`sensor.${base}_energy`),
       watts: e.power_usage || pick(`sensor.${base}_power`),
-      mode: e.program || pick(`select.${base}_washer_mode`, `sensor.${base}_washer_mode`, `select.${base}_course`, `sensor.${base}_course`),
+      mode: e.program || (dry
+        ? pick(`select.${base}_dryer_mode`, `sensor.${base}_dryer_mode`, `select.${base}_course`, `sensor.${base}_course`)
+        : pick(`select.${base}_washer_mode`, `sensor.${base}_washer_mode`, `select.${base}_course`, `sensor.${base}_course`)),
     };
     // Only cache once the main ids resolved (entities can load after the first render).
     if (ids.job || ids.machine) this._ids = ids;
@@ -999,7 +1028,7 @@ class SamsungWasherCard extends HTMLElement {
     else if (power === 'unavailable' || s(ids.job) === 'unavailable') phase = 'unavailable';
     else if (power === 'off') phase = 'off';
     else if (machine === 'pause' || machine === 'paused') phase = 'pause';
-    else phase = JOB_MAP[djob] || JOB_MAP[job] || (machine === 'run' ? 'wash' : (job === 'finish' ? 'finish' : 'idle'));
+    else phase = JOB_MAP[djob] || JOB_MAP[job] || (machine === 'run' ? (this._config.device === 'dryer' ? 'dry' : 'wash') : (job === 'finish' ? 'finish' : 'idle'));
     if (phase === 'idle' && this._lastActive && Date.now() - this._lastActive < 20 * 60 * 1000 && machine === 'stop') phase = 'finish';
     const active = ['sensing', 'prewash', 'wash', 'rinse', 'spin', 'dry', 'cool', 'wrinkle', 'pause'].includes(phase);
     if (active) this._lastActive = Date.now();
@@ -1046,7 +1075,7 @@ class SamsungWasherCard extends HTMLElement {
           <div class="stage"><canvas></canvas></div>
           <div class="tint"></div>
           <div class="top">
-            <div class="badge">${ICON_WASHER}</div>
+            <div class="badge">${this._config.device === 'dryer' ? ICON_DRYER : ICON_WASHER}</div>
             <div class="who"><div class="name"></div><div class="sub"><i class="live"></i><span class="status"></span></div></div>
             <button class="round power">${ICON_POWER}</button>
           </div>
@@ -1069,7 +1098,7 @@ class SamsungWasherCard extends HTMLElement {
     this._applyLayout();
 
     try {
-      this._scene = new WasherScene(this._el.canvas, { color: this._config.color, bloom: this._config.bloom !== false });
+      this._scene = new WasherScene(this._el.canvas, { color: this._config.color, bloom: this._config.bloom !== false, device: this._config.device });
     } catch (err) {
       this._el.stage.innerHTML = `<div class="err">${this._t.glFail}: ${err.message}</div>`;
     }
@@ -1156,7 +1185,7 @@ class SamsungWasherCard extends HTMLElement {
 
     el.card.style.setProperty('--mood', ph.color);
     const fname = this._state(d.ids.power)?.attributes.friendly_name;
-    el.name.textContent = cfg.name || fname || T.name;
+    el.name.textContent = cfg.name || fname || (cfg.device === 'dryer' ? T.dryerName : T.name);
     el.status.innerHTML = `<b>${label}</b>${d.mode?.state && d.active ? ` · ${this._modeLabel(d.mode.state)}` : ''}${d.door ? ` · ${T.doorOpen}` : ''}`;
     el.live.className = `live${d.active && d.phase !== 'pause' ? ' pulse' : ''}${['off', 'unavailable'].includes(d.phase) ? ' still' : ''}`;
     el.power.classList.toggle('on', d.power === 'on');
@@ -1185,8 +1214,9 @@ class SamsungWasherCard extends HTMLElement {
     el.bar.style.width = `${Math.round(d.progress * 100)}%`;
 
     // Step chips.
-    const steps = STEP_ORDER.filter((k) => k !== 'dry' || cfg.dryer);
-    const cur = STEP_OF[d.phase];
+    const isDryer = cfg.device === 'dryer';
+    const steps = isDryer ? DRYER_STEPS : STEP_ORDER.filter((k) => k !== 'dry' || cfg.dryer);
+    const cur = (isDryer ? DRYER_STEP_OF : STEP_OF)[d.phase];
     const curIdx = cur === 'done' ? steps.length : steps.indexOf(cur);
     el.steps.style.setProperty('--n', steps.length);
     const stepsHtml = steps.map((k, i) => {
@@ -1229,6 +1259,7 @@ class SamsungWasherCard extends HTMLElement {
 const EDITOR_SCHEMA = [
   { name: 'entity', required: true, selector: { entity: { domain: 'switch' } } },
   { name: 'name', selector: { text: {} } },
+  { name: 'device', selector: { select: { mode: 'dropdown', options: [{ value: 'washer', label: 'Washer / washer-dryer' }, { value: 'dryer', label: 'Dryer' }] } } },
   {
     type: 'grid', name: '', schema: [
       { name: 'color', selector: { select: { mode: 'dropdown', options: [
@@ -1246,6 +1277,7 @@ const EDITOR_SCHEMA = [
 const EDITOR_LABELS = {
   entity: 'Power switch (SmartThings)',
   name: 'Name',
+  device: 'Appliance type',
   color: 'Body colour',
   height: '3D view height',
   dryer: 'Washer-dryer (show the Dry step)',
@@ -1282,6 +1314,13 @@ class SamsungWasherCardEditor extends HTMLElement {
   }
 }
 
+// Dryer variant: same card, `device: dryer` preset.
+class SamsungDryerCard extends SamsungWasherCard {
+  static getConfigElement() { return document.createElement('samsung-washer-card-editor'); }
+  static getStubConfig(hass) { return { ...SamsungWasherCard._dryerStub(hass), device: 'dryer' }; }
+  setConfig(config) { super.setConfig({ ...config, device: 'dryer' }); }
+}
+
 if (!customElements.get('samsung-washer-card-editor')) customElements.define('samsung-washer-card-editor', SamsungWasherCardEditor);
 
 if (!customElements.get('samsung-washer-card')) {
@@ -1291,6 +1330,14 @@ if (!customElements.get('samsung-washer-card')) {
     type: 'samsung-washer-card',
     name: 'Samsung Washer Card',
     description: 'Animated 3D Samsung washer / washer-dryer for the SmartThings integration.',
+    documentationURL: 'https://github.com/cryptooth/ha-samsung-washing-card',
+    preview: true,
+  });
+  customElements.define('samsung-dryer-card', SamsungDryerCard);
+  window.customCards.push({
+    type: 'samsung-dryer-card',
+    name: 'Samsung Dryer Card',
+    description: 'Animated 3D Samsung dryer (Bespoke AI) for the SmartThings integration.',
     documentationURL: 'https://github.com/cryptooth/ha-samsung-washing-card',
     preview: true,
   });

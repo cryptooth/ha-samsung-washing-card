@@ -29,16 +29,17 @@
 </style>
 </head>
 <body>
-  <div class="col"><samsung-washer-card id="card"></samsung-washer-card></div>
+  <div class="col"><div id="slot"></div></div>
 
   <div class="sim">
     <h1>Simulator</h1>
-    <p class="hint">A fake Home Assistant <code>hass</code> object mimics the SmartThings integration's entities and plays a sped-up cycle. Jump between phases, pause, or open the door. Drag the 3D view to turn the machine. Add <code>?lang=tr</code> to the URL for Turkish.</p>
+    <p class="hint">A fake Home Assistant <code>hass</code> object mimics the SmartThings integration's entities and plays a sped-up cycle. Jump between phases, pause, or open the door. Drag the 3D view to turn the machine. Add <code>?lang=tr</code> to the URL for Turkish, or <code>?device=dryer</code> for the dryer card.</p>
 
     <div class="lbl">Program</div>
     <div class="btns">
       <button id="start">▶ Wash + Dry</button>
       <button id="startw">▶ Wash only</button>
+      <button id="startd">▶ Dry (dryer)</button>
       <button id="pause">⏸ Pause</button>
     </div>
 
@@ -52,6 +53,7 @@
     <div class="btns">
       <button id="power">Power on/off</button>
       <button id="door">Door open/close</button>
+      <button id="kind">Washer ⇄ Dryer</button>
       <button id="color">Colour</button>
     </div>
 
@@ -62,14 +64,17 @@
 <script src="../dist/samsung-washer-card.js"></script>
 <script>
   // ---- fake SmartThings washer-dryer ----
-  const ID = 'washer';
+  const q0 = new URLSearchParams(location.search);
+  let kind = q0.get('device') === 'dryer' ? 'dryer' : 'washer';
+  let ID = kind;
   const PROGRAMS = {
     wd: { course: 'wash_dry', steps: [['weight_sensing', 1], ['wash', 32], ['rinse', 16], ['spin', 9], ['drying', 58], ['cooling', 6]] },
+    d:  { course: 'normal', steps: [['weight_sensing', 1], ['drying', 55], ['cooling', 8]] },
     w:  { course: 'cotton',   steps: [['weight_sensing', 1], ['wash', 38], ['rinse', 18], ['spin', 10]] },
   };
   const sim = {
     power: 'on', machine: 'stop', job: 'none', door: false, program: null, step: 0, stepLeft: 0,
-    course: 'wash_dry', speed: 60, energy: 241.36, watts: 0, color: 'white',
+    course: kind === 'dryer' ? 'normal' : 'wash_dry', speed: 60, energy: 241.36, watts: 0, color: 'white',
   };
   const now = () => Date.now();
   const remainingMin = () => {
@@ -85,19 +90,21 @@
     const t = (id, state, attrs = {}) => ({ entity_id: id, state: String(state), attributes: attrs, last_changed: new Date().toISOString() });
     const comp = sim.program ? new Date(now() + remainingMin() * 60 * 1000) : new Date(now());
     return {
-      [`switch.${ID}`]: t(`switch.${ID}`, sim.power, { friendly_name: 'Washer' }),
+      [`switch.${ID}`]: t(`switch.${ID}`, sim.power, { friendly_name: kind === 'dryer' ? 'Dryer' : 'Washer' }),
       [`sensor.${ID}_machine_state`]: t(`sensor.${ID}_machine_state`, sim.power === 'off' ? 'stop' : sim.machine, { device_class: 'enum', options: ['pause', 'run', 'stop'] }),
-      [`sensor.${ID}_job_state`]: t(`sensor.${ID}_job_state`, sim.power === 'off' ? 'none' : sim.job, { device_class: 'enum' }),
+      [`sensor.${ID}_${kind}_job_state`]: t(`sensor.${ID}_${kind}_job_state`, sim.power === 'off' ? 'none' : sim.job, { device_class: 'enum' }),
       [`sensor.${ID}_completion_time`]: t(`sensor.${ID}_completion_time`, comp.toISOString(), { device_class: 'timestamp' }),
       [`sensor.${ID}_energy`]: t(`sensor.${ID}_energy`, sim.energy.toFixed(2), { unit_of_measurement: 'kWh', device_class: 'energy' }),
       [`sensor.${ID}_power`]: t(`sensor.${ID}_power`, sim.watts, { unit_of_measurement: 'W', device_class: 'power' }),
       [`binary_sensor.${ID}_door`]: t(`binary_sensor.${ID}_door`, sim.door ? 'on' : 'off', { device_class: 'door' }),
-      [`select.${ID}_washer_mode`]: t(`select.${ID}_washer_mode`, sim.course),
+      [`select.${ID}_${kind}_mode`]: t(`select.${ID}_${kind}_mode`, sim.course),
     };
   }
 
-  let card = document.getElementById('card');
-  let cfg = { type: 'custom:samsung-washer-card', entity: `switch.${ID}`, color: sim.color, bloom: new URLSearchParams(location.search).get('bloom') !== '0', language: new URLSearchParams(location.search).get('lang') || 'en' };
+  let card = document.createElement(
+    kind === 'dryer' ? 'samsung-dryer-card' : 'samsung-washer-card');
+  document.getElementById('slot').append(card);
+  let cfg = { type: 'custom:samsung-washer-card', entity: `switch.${ID}`, color: sim.color, bloom: q0.get('bloom') !== '0', language: q0.get('lang') || 'en' };
   card.setConfig(cfg);
 
   // HA hands cards a fresh hass object on every state change; do the same.
@@ -126,7 +133,7 @@
 
   function jumpTo(job) {
     if (job === 'finish') { finish(); push(); return; }
-    if (!sim.program || !PROGRAMS[sim.program].steps.some((s) => s[0] === job)) start('wd');
+    if (!sim.program || !PROGRAMS[sim.program].steps.some((s) => s[0] === job)) start(kind === 'dryer' ? 'd' : 'wd');
     const st = PROGRAMS[sim.program].steps;
     sim.step = st.findIndex((s) => s[0] === job);
     if (sim.step < 0) { sim.step = 0; job = st[0][0]; }
@@ -158,6 +165,7 @@
   const $ = (id) => document.getElementById(id);
   $('start').onclick = () => start('wd');
   $('startw').onclick = () => start('w');
+  $('startd').onclick = () => start('d');
   $('pause').onclick = () => { if (sim.program) { sim.machine = sim.machine === 'pause' ? 'run' : 'pause'; push(); } };
   $('power').onclick = () => { sim.power = sim.power === 'on' ? 'off' : 'on'; if (sim.power === 'off') stop(); push(); };
   $('door').onclick = () => { sim.door = !sim.door; if (sim.door && sim.program) sim.machine = 'pause'; push(); };
@@ -166,11 +174,24 @@
     sim.color = colors[(colors.indexOf(sim.color) + 1) % colors.length];
     // Body colour is a config option: rebuild the card the way HA does after a YAML edit.
     cfg = { ...cfg, color: sim.color };
-    const fresh = document.createElement('samsung-washer-card');
+    const fresh = document.createElement(kind === 'dryer' ? 'samsung-dryer-card' : 'samsung-washer-card');
     fresh.setConfig(cfg);
     card.replaceWith(fresh);
     card = fresh;
     push();
+  };
+
+  // Swap between the washer and dryer cards (separate entity sets, like two SmartThings devices).
+  $('kind').onclick = () => {
+    kind = kind === 'dryer' ? 'washer' : 'dryer'; ID = kind;
+    stop(); sim.power = 'on'; sim.door = false; sim.course = kind === 'dryer' ? 'normal' : 'wash_dry';
+    cfg = { ...cfg, entity: `switch.${ID}` };
+    const fresh = document.createElement(kind === 'dryer' ? 'samsung-dryer-card' : 'samsung-washer-card');
+    fresh.setConfig(cfg);
+    card.replaceWith(fresh);
+    card = fresh;
+    start(kind === 'dryer' ? 'd' : 'wd');
+    jumpTo(kind === 'dryer' ? 'drying' : 'wash');
   };
 
   const JUMPS = [['weight_sensing', 'Weighing'], ['wash', 'Wash'], ['rinse', 'Rinse'], ['spin', 'Spin'], ['drying', 'Dry'], ['cooling', 'Cool'], ['finish', 'Done']];
@@ -185,11 +206,11 @@
   }
 
   // Start mid-wash so the first look has water and bubbles.
-  const q = new URLSearchParams(location.search);
+  const q = q0;
   if (q.get('speed')) sim.speed = +q.get('speed');
-  start('wd');
+  start(kind === 'dryer' ? 'd' : 'wd');
   if (q.get('phase')) jumpTo(q.get('phase'));
-  else jumpTo('wash');
+  else jumpTo(kind === 'dryer' ? 'drying' : 'wash');
   if (q.get('door')) { sim.door = true; push(); }
 </script>
 </body>
